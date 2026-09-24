@@ -2,11 +2,13 @@ from datetime import datetime, timezone
 
 from bot_game_book.models import Chapter, Game, GamePlayer, GameStatus, User
 
+PLATFORM_LABELS = {"telegram": "TG", "max": "MAX"}
+
 
 def fmt_user(user: User) -> str:
-    if user.username:
-        return f"@{user.username}"
-    return user.name
+    base = f"@{user.username}" if user.username else user.name
+    label = PLATFORM_LABELS.get(user.platform)
+    return f"{base} [{label}]" if label else base
 
 
 def utcnow() -> datetime:

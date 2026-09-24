@@ -6,8 +6,15 @@
 
 ## Стек
 
-Python 3.12+, aiogram 3 (long polling), SQLAlchemy 2 + PostgreSQL 17,
+Python 3.12+, aiogram 3 (long polling, адаптер Telegram), MAX Bot API
+(long polling, адаптер MAX), SQLAlchemy 2 + PostgreSQL 17,
 APScheduler, OpenAI-совместимый LLM API, uv.
+
+Архитектура мультиплатформенная: ядро игры (engine/llm/модели) не зависит
+от мессенджера; доставка — через нейтральный транспортный слой
+(`transport/`) и адаптеры (`adapters/telegram_adapter.py`,
+`adapters/max_adapter.py`). Игроки из Telegram и MAX могут участвовать
+в одной игре.
 
 ## Запуск (локальный, тестовый режим)
 
@@ -24,8 +31,11 @@ uv sync
 ```
 
 3. Конфиг: скопируй `.env.example` → `.env`, заполни `BOT_TOKEN`
-(у @BotFather), `LLM_API_KEY` / `LLM_API_BASE` / `LLM_MODEL`,
-`ADMIN_USERNAMES` — свой username для админки.
+   (у @BotFather) и/или `MAX_ACCESS_TOKEN` (настройки чат-бота в MAX),
+   `MESSENGERS` — список платформ (`telegram,max`),
+   `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL`,
+   `ADMIN_USERNAMES` — свой username для админки. Платформа без токена
+   молча пропускается.
 
 4. Запуск бота (вручную, для тестов):
 

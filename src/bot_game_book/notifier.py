@@ -1,13 +1,15 @@
+"""Мультиплатформенная доставка сообщений: маршрут по платформе получателя."""
+
 import logging
 
-from aiogram import Bot
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
-from aiogram.types import InlineKeyboardMarkup
+from bot_game_book.models import User
+from bot_game_book.transport.gateway import MESSAGE_SPLIT_LIMIT, BotGateway
+from bot_game_book.transport.types import Keyboard
 
 logger = logging.getLogger(__name__)
 
 
-def split_text(text: str, limit: int = 3800) -> list[str]:
+def split_text(text: str, limit: int = MESSAGE_SPLIT_LIMIT) -> list[str]:
     parts: list[str] = []
     buffer = ""
     for paragraph in text.split("\n\n"):
@@ -29,43 +31,50 @@ def split_text(text: str, limit: int = 3800) -> list[str]:
 
 
 class Notifier:
-    def __init__(self, bot: Bot) -> None:
-        self._bot = bot
+    def __init__(self, gateways: dict[str, BotGateway]) -> None:
+        self._gateways = gateways
+
+    def _gateway(self, platform: str) -> BotGateway | None:
+        gateway = self._gateways.get(platform)
+        if gateway is None:
+            logger.warning("no gateway for platform %s", platform)
+        return gateway
+
+    async def send_user(
+        self, user: User, text: str, keyboard: Keyboard | None = None
+    ) -> None:
+        await self.send(user.platform, user.platform_user_id, text, keyboard)
 
     async def send(
-        self, chat_id: int, text: str, keyboard: InlineKeyboardMarkup | None = None
+        self, platform: str, chat_id: int, text: str, keyboard: Keyboard | None = None
     ) -> None:
+        gateway = self._gateway(platform)
+        if gateway is None:
+            return
         parts = split_text(text)
         for i, part in enumerate(parts):
             kb = keyboard if i == len(parts) - 1 else None
-            try:
-                await self._bot.send_message(chat_id, part, reply_markup=kb)
-            except TelegramForbiddenError:
-                logger.warning("user %s blocked the bot", chat_id)
-            except TelegramBadRequest as e:
-                logger.warning("send to %s failed: %s", chat_id, e)
+            await gateway.send_message(chat_id, part, kb)
 
     async def edit_or_send(
         self,
+        platform: str,
         chat_id: int,
-        message_id: int | None,
+        message_id: str | None,
         text: str,
-        keyboard: InlineKeyboardMarkup | None = None,
-    ) -> int | None:
+        keyboard: Keyboard | None = None,
+    ) -> str | None:
+        gateway = self._gateway(platform)
+        if gateway is None:
+            return None
         if message_id is not None:
             try:
-                await self._bot.edit_message_text(
-                    text,
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    reply_markup=keyboard,
-                )
-                return message_id
-            except TelegramBadRequest as e:
-                logger.warning("edit %s failed: %s", message_id, e)
+                if await gateway.edit_message(chat_id, message_id, text, keyboard):
+                    return message_id
+            except Exception as e:
+                logger.warning("edit %s/%s failed: %s", platform, message_id, e)
         try:
-            msg = await self._bot.send_message(chat_id, text, reply_markup=keyboard)
-            return msg.message_id
-        except (TelegramBadRequest, TelegramForbiddenError) as e:
-            logger.warning("dashboard send to %s failed: %s", chat_id, e)
+            return await gateway.send_message(chat_id, text, keyboard)
+        except Exception as e:
+            logger.warning("dashboard send to %s/%s failed: %s", platform, chat_id, e)
             return None

@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from bot_game_book.config import get_settings
+from bot_game_book.db_migrate import migrate
 from bot_game_book.models import Base
 
 _engine = None
@@ -22,5 +23,7 @@ def get_session_maker() -> async_sessionmaker:
 
 
 async def init_db() -> None:
-    async with get_engine().begin() as conn:
+    engine = get_engine()
+    await migrate(engine)
+    async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

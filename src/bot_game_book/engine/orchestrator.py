@@ -98,7 +98,9 @@ class TurnOrchestrator:
         game.turn_assigned_at = utcnow()
         game.turn_reminded = False
         prev_summary = await self._last_summary(session, game)
-        await self._notifier.send(player.user.tg_id, turn_prompt(game, prev_summary), write_kb(game.id))
+        await self._notifier.send_user(
+            player.user, turn_prompt(game, prev_summary), write_kb(game.id)
+        )
         await self.refresh_dashboard(session, game)
 
     async def resend_turn(self, session, game: Game) -> None:
@@ -106,7 +108,9 @@ class TurnOrchestrator:
         if user is None:
             return
         prev_summary = await self._last_summary(session, game)
-        await self._notifier.send(user.tg_id, turn_prompt(game, prev_summary), write_kb(game.id))
+        await self._notifier.send_user(
+            user, turn_prompt(game, prev_summary), write_kb(game.id)
+        )
         await self.refresh_dashboard(session, game)
 
     async def refresh_dashboard(self, session, game: Game, confirm: str | None = None) -> None:
@@ -116,7 +120,9 @@ class TurnOrchestrator:
         if host is None:
             return
         text = dashboard_text(game, game.players, utcnow())
+        platform = game.dashboard_platform or host.platform
         message_id = await self._notifier.edit_or_send(
+            platform,
             game.dashboard_chat_id,
             game.dashboard_message_id,
             text,
@@ -124,7 +130,8 @@ class TurnOrchestrator:
         )
         if message_id is not None and message_id != game.dashboard_message_id:
             game.dashboard_message_id = message_id
-            game.dashboard_chat_id = host.tg_id
+            game.dashboard_chat_id = host.platform_user_id
+            game.dashboard_platform = host.platform
 
     async def confirm_chapter(
         self, session, game_id: int, draft: ChapterDraft, author_user_id: int
@@ -185,8 +192,8 @@ class TurnOrchestrator:
                 await session.commit()
                 return "cancelled"
             if skipped_user is not None:
-                await self._notifier.send(
-                    skipped_user.tg_id,
+                await self._notifier.send_user(
+                    skipped_user,
                     f"⏭ Твой ход в игре «{game.topic}» пропущен ({reason}). "
                     "Ты вернёшься в очередь на следующем круге.",
                 )
@@ -201,7 +208,7 @@ class TurnOrchestrator:
         user = self._current_user(game)
         if user is None:
             return False
-        await self._notifier.send(user.tg_id, turn_assigned_note(game))
+        await self._notifier.send_user(user, turn_assigned_note(game))
         await self._log_event(session, game.id, "reminded", {"source": source})
         await session.commit()
         return True
@@ -246,10 +253,10 @@ class TurnOrchestrator:
         await self._log_event(session, game.id, "game_cancelled", {"reason": reason})
         text = f"❌ Игра «{game.topic}» остановлена: {reason}."
         for player in game.players:
-            await self._notifier.send(player.user.tg_id, text)
+            await self._notifier.send_user(player.user, text)
         host = await session.get(User, game.host_user_id)
         if host is not None:
-            await self._notifier.send(host.tg_id, text)
+            await self._notifier.send_user(host, text)
         await self.refresh_dashboard(session, game)
         self._locks.pop(game.id, None)
 
@@ -268,13 +275,16 @@ class TurnOrchestrator:
         chain = summaries_chain(chapters, labels)
         for player in game.players:
             for part in parts:
-                await self._notifier.send(player.user.tg_id, part)
-            await self._notifier.send(player.user.tg_id, chain)
+                await self._notifier.send_user(player.user, part)
+            await self._notifier.send_user(player.user, chain)
         host = await session.get(User, game.host_user_id)
-        if host is not None and host.tg_id not in {p.user.tg_id for p in game.players}:
+        host_ids = {
+            (p.user.platform, p.user.platform_user_id) for p in game.players
+        }
+        if host is not None and (host.platform, host.platform_user_id) not in host_ids:
             for part in parts:
-                await self._notifier.send(host.tg_id, part)
-            await self._notifier.send(host.tg_id, chain)
+                await self._notifier.send_user(host, part)
+            await self._notifier.send_user(host, chain)
         await self.refresh_dashboard(session, game)
         self._locks.pop(game.id, None)
 
@@ -303,8 +313,8 @@ class TurnOrchestrator:
                     if now >= deadline - half:
                         user = self._current_user(game)
                         if user is not None:
-                            await self._notifier.send(
-                                user.tg_id,
+                            await self._notifier.send_user(
+                                user,
                                 f"⏰ Напоминание: твой ход в игре «{game.topic}» "
                                 "ждёт тебя!",
                             )

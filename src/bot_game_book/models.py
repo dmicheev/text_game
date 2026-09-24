@@ -36,9 +36,11 @@ class PlayerStatus(str, enum.Enum):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("platform", "platform_user_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    tg_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    platform: Mapped[str] = mapped_column(String(16), default="telegram", index=True)
+    platform_user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     username: Mapped[str | None] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -82,8 +84,9 @@ class Game(Base):
     turn_assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     turn_reminded: Mapped[bool] = mapped_column(Boolean, default=False)
     paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dashboard_platform: Mapped[str | None] = mapped_column(String(16), nullable=True)
     dashboard_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    dashboard_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    dashboard_message_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
