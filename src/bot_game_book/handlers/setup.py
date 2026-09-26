@@ -368,6 +368,14 @@ async def cb_create_game(ctx: Context) -> None:
         if host is None:
             await ctx.answer("Сначала /start", alert=True)
             return
+        if not host.is_admin:
+            await ctx.fsm.clear()
+            await ctx.answer("Создавать игры может только ведущий", alert=True)
+            await ctx.reply(
+                "Создавать игры может только ведущий. Попроси ведущего "
+                "набрать тебя в игру через /newgame."
+            )
+            return
         game = Game(
             host_user_id=host.id,
             style_label=data["style_label"],
