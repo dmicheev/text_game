@@ -9,10 +9,7 @@ def write_kb(game_id: int) -> Keyboard:
 
 
 def twist_kb(game_id: int) -> Keyboard:
-    return [
-        [Button("⏭ Без пожелания", f"twskip:{game_id}")],
-        [Button("✨ Сгенерировать главу", f"gen:{game_id}")],
-    ]
+    return [[Button("⏭ Без пожелания", f"twskip:{game_id}")]]
 
 
 def gen_only_kb(game_id: int) -> Keyboard:

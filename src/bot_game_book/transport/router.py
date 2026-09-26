@@ -94,9 +94,13 @@ def parse_command(text: str) -> str | None:
 
 
 class Router:
-    def __init__(self) -> None:
+    def __init__(self, fsm_storage=None) -> None:
         self._rules: list[_Rule] = []
-        self.fsm_storage = MemoryFSMStorage()
+        if fsm_storage is None:
+            from bot_game_book.transport.fsm import MemoryFSMStorage
+
+            fsm_storage = MemoryFSMStorage()
+        self.fsm_storage = fsm_storage
 
     def command(self, name: str, handler: Handler) -> None:
         self._rules.append(_Rule("command", name, handler))

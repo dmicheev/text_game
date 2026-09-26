@@ -6,6 +6,7 @@ from bot_game_book.engine.views import chapter_preview
 from bot_game_book.handlers.common import get_user
 from bot_game_book.keyboards import confirm_kb, gen_only_kb, twist_kb
 from bot_game_book.llm.provider import LLMError
+from bot_game_book.llm.validator import ChapterDraft
 from bot_game_book.models import Chapter, GameStatus
 from bot_game_book.transport.router import Context, Router
 
@@ -14,6 +15,19 @@ STATE_BUSY = "turn:busy"
 STATE_CONFIRM = "turn:confirm"
 
 MAX_REGENS = 2
+
+
+def _writing_status_text(ctx: Context) -> str:
+    variants = 1
+    settings = ctx.deps.settings
+    if settings is not None:
+        variants = getattr(settings, "chapter_variants", 1) or 1
+    if variants > 1:
+        return (
+            "🌀 Пишу главу: несколько вариантов, критика и шлифовка — "
+            "это может занять 5–10 минут. Наберись терпения."
+        )
+    return "🌀 Пишу главу... это займёт до пары минут."
 
 
 async def _load_game(ctx: Context, game_id: int):
@@ -69,35 +83,32 @@ async def cb_turn(ctx: Context) -> None:
 async def on_twist(ctx: Context) -> None:
     data = await ctx.fsm.get_data()
     await ctx.fsm.update_data(twist=ctx.message_text.strip())
-    await ctx.reply("Принято! Когда будешь готов — генерируем.", gen_only_kb(data["game_id"]))
+    await _generate_flow(ctx, data["game_id"])
 
 
 async def cb_twist_skip(ctx: Context) -> None:
     data = await ctx.fsm.get_data()
     await ctx.fsm.update_data(twist=None)
     await ctx.answer()
-    await ctx.reply(
-        "Хорошо, ИИ сам решит, что происходит. Генерируем?",
-        gen_only_kb(data["game_id"]),
-    )
+    await _generate_flow(ctx, data["game_id"])
 
 
-async def cb_generate(ctx: Context) -> None:
-    game_id = int(ctx.update.data.split(":")[1])  # type: ignore[attr-defined]
+async def _generate_flow(ctx: Context, game_id: int) -> None:
     data = await ctx.fsm.get_data()
-    if data.get("game_id") != game_id:
-        await ctx.answer("Не твоя текущая игра", alert=True)
-        return
     game = await _load_game(ctx, game_id)
     if game is None or game.status != GameStatus.running:
-        await ctx.answer("Игра не активна", alert=True)
+        await ctx.reply("Игра не активна.")
         return
     if not _is_current_player(game, ctx):
-        await ctx.answer("Сейчас не твой ход", alert=True)
+        await ctx.reply("Сейчас не твой ход.")
         return
-    await ctx.answer()
     await ctx.fsm.set_state(STATE_BUSY)
-    status_id = await ctx.reply("🌀 Пишу главу... это займёт до минуты.")
+    status_id = await ctx.reply(_writing_status_text(ctx))
+
+    async def _on_stage(text: str) -> None:
+        if status_id:
+            await ctx.gateway.edit_message(ctx.chat_id, status_id, text)
+
     prev_summary, prev_memory = await _last_summary(ctx, game_id, game.current_chapter_idx)
     try:
         draft = await ctx.deps.generator.generate_chapter(
@@ -111,6 +122,8 @@ async def cb_generate(ctx: Context) -> None:
             prev_memory=prev_memory,
             twist=data.get("twist"),
             temperature=game.style_temperature,
+            style_label=game.style_label,
+            on_stage=_on_stage,
         )
     except LLMError:
         await ctx.fsm.set_state(STATE_TWIST)
@@ -121,7 +134,14 @@ async def cb_generate(ctx: Context) -> None:
             gen_only_kb(game_id),
         )
         return
-    await ctx.fsm.update_data(draft=draft)
+    await ctx.fsm.update_data(
+        draft={
+            "title": draft.title,
+            "chapter": draft.chapter,
+            "summary": draft.summary,
+            "memory": draft.memory,
+        }
+    )
     await ctx.fsm.set_state(STATE_CONFIRM)
     can_rewrite = data.get("regens", 0) < MAX_REGENS
     if status_id:
@@ -132,10 +152,21 @@ async def cb_generate(ctx: Context) -> None:
     )
 
 
+async def cb_generate(ctx: Context) -> None:
+    game_id = int(ctx.update.data.split(":")[1])  # type: ignore[attr-defined]
+    data = await ctx.fsm.get_data()
+    if data.get("game_id") != game_id:
+        await ctx.answer("Не твоя текущая игра", alert=True)
+        return
+    await ctx.answer()
+    await _generate_flow(ctx, game_id)
+
+
 async def cb_confirm(ctx: Context) -> None:
     game_id = int(ctx.update.data.split(":")[1])  # type: ignore[attr-defined]
     data = await ctx.fsm.get_data()
-    draft = data.get("draft")
+    raw_draft = data.get("draft")
+    draft = ChapterDraft(**raw_draft) if isinstance(raw_draft, dict) else raw_draft
     if draft is None:
         await ctx.answer("Глава потерялась, начни ход заново", alert=True)
         await ctx.fsm.clear()
@@ -175,7 +206,12 @@ async def cb_rewrite(ctx: Context) -> None:
         return
     await ctx.answer()
     await ctx.fsm.update_data(regens=regens + 1)
-    status_id = await ctx.reply("🌀 Пишу заново...")
+    status_id = await ctx.reply(_writing_status_text(ctx))
+
+    async def _on_stage(text: str) -> None:
+        if status_id:
+            await ctx.gateway.edit_message(ctx.chat_id, status_id, text)
+
     prev_summary, prev_memory = await _last_summary(ctx, game_id, game.current_chapter_idx)
     try:
         draft = await ctx.deps.generator.generate_chapter(
@@ -193,11 +229,20 @@ async def cb_rewrite(ctx: Context) -> None:
                 "сохранив стиль и преемственность сюжета"
             ),
             temperature=game.style_temperature,
+            style_label=game.style_label,
+            on_stage=_on_stage,
         )
     except LLMError:
         await ctx.gateway.edit_message(ctx.chat_id, status_id or "", "😔 ИИ недоступен, попробуй ещё раз.")
         return
-    await ctx.fsm.update_data(draft=draft)
+    await ctx.fsm.update_data(
+        draft={
+            "title": draft.title,
+            "chapter": draft.chapter,
+            "summary": draft.summary,
+            "memory": draft.memory,
+        }
+    )
     can_rewrite = regens + 1 < MAX_REGENS
     if status_id:
         await ctx.gateway.delete_message(ctx.chat_id, status_id)

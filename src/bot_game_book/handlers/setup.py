@@ -25,7 +25,6 @@ STATE_CONFIRM = "newgame:confirm"
 PAGE_SIZE = 8
 
 STYLE_PROMPT = "🎭 Шаг 1/8. Выбери писателя, в стиле которого будет написана книга:"
-PLAYERS_PROMPT = "👥 Шаг 7/8. Выбери участников (минимум 2). Ты отмечен по умолчанию:"
 
 
 def catalog_kb(names: list[tuple[str, str]], page: int) -> Keyboard:
@@ -288,7 +287,13 @@ async def cb_timeout(ctx: Context) -> None:
     await ctx.fsm.update_data(users=[u.id for u in users], selected=list(selected))
     await ctx.fsm.set_state(STATE_PLAYERS)
     await ctx.answer()
-    await ctx.reply(PLAYERS_PROMPT, players_kb(users, selected))
+    min_players = 1 if ctx.deps.settings.allow_solo else 2
+    await ctx.fsm.update_data(min_players=min_players)
+    await ctx.reply(
+        f"👥 Шаг 7/8. Выбери участников (минимум {min_players}). "
+        "Ты отмечен по умолчанию:",
+        players_kb(users, selected),
+    )
 
 
 async def _users_by_ids(ids: list[int]) -> list[User]:
@@ -311,15 +316,24 @@ async def cb_toggle_player(ctx: Context) -> None:
         selected.add(user_id)
     await ctx.fsm.update_data(selected=list(selected))
     users = await _users_by_ids(data["users"])
-    await ctx.edit(PLAYERS_PROMPT, players_kb(users, selected))
+    min_players = data.get("min_players", 2)
+    prompt = (
+        f"👥 Шаг 7/8. Выбери участников (минимум {min_players}). "
+        "Ты отмечен по умолчанию:"
+    )
+    await ctx.edit(prompt, players_kb(users, selected))
     await ctx.answer()
 
 
 async def cb_players_done(ctx: Context) -> None:
     data = await ctx.fsm.get_data()
     selected = set(data["selected"])
-    if len(selected) < 2:
-        await ctx.answer("Минимум 2 участника!", alert=True)
+    min_players = data.get("min_players", 2)
+    if len(selected) < min_players:
+        await ctx.answer(
+            f"Минимум {min_players} участника!" if min_players == 1 else "Минимум 2 участника!",
+            alert=True,
+        )
         return
     users = await _users_by_ids(list(selected))
     names = ", ".join(fmt_user(u) for u in users)

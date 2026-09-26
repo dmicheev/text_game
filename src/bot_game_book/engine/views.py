@@ -94,6 +94,8 @@ def chapter_preview(draft_title: str, draft_body: str, words_target: int) -> str
             draft_body,
             "",
             f"Объём: ~{words_target} слов было заказано.",
+            "✅ Оставить — глава сохранится, ход перейдёт дальше, "
+            "и тебе придёт 🎨 иллюстрация к ней.",
         ]
     )
 

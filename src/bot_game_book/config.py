@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     images_provider: str = "pollinations"
     image_api_base: str = "https://image.pollinations.ai"
     admin_usernames: str = ""
+    chapter_variants: int = 3
+    allow_solo: bool = False
     seed_path: Path = SEED_PATH
 
     @property

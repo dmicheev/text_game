@@ -193,10 +193,22 @@ class TurnOrchestrator:
     ) -> None:
         """Фоновая иллюстрация: генерация, сохранение, отправка автору."""
         maker = get_session_maker()
+        async with maker() as session:
+            user = await session.get(User, author_user_id)
+        if user is not None:
+            await self._notifier.send_user(
+                user, f"🎨 Рисую иллюстрацию к главе {chapter_idx}..."
+            )
         try:
             image, prompt = await self._illustrator.illustrate(style_label, body)
         except Exception as e:
             logger.warning("illustration for game %s ch %s failed: %s", game_id, chapter_idx, e)
+            if user is not None:
+                await self._notifier.send_user(
+                    user,
+                    f"😔 Иллюстрация к главе {chapter_idx} не получилась — "
+                    "продолжаем без неё.",
+                )
             return
         async with maker() as session:
             result = await session.execute(
@@ -209,7 +221,6 @@ class TurnOrchestrator:
                 return
             chapter.illustration = image
             chapter.illustration_prompt = prompt
-            user = await session.get(User, author_user_id)
             await session.commit()
         if user is not None:
             await self._notifier.send_photo_user(

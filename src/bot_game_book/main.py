@@ -40,7 +40,9 @@ async def _bootstrap_db(settings) -> None:
 
 
 def build_router(session_maker, generator, orchestrator, notifier, settings) -> Router:
-    router = Router()
+    from bot_game_book.transport.fsm import DbFsmStorage
+
+    router = Router(fsm_storage=DbFsmStorage(session_maker))
     deps = Deps(
         session_maker=session_maker,
         orchestrator=orchestrator,
@@ -65,7 +67,9 @@ async def amain() -> None:
     provider = LLMProvider(
         settings.llm_api_base, settings.llm_api_key, settings.llm_model
     )
-    generator = ChapterGenerator(provider, fast_model=settings.fast_model)
+    generator = ChapterGenerator(
+        provider, fast_model=settings.fast_model, variants=settings.chapter_variants
+    )
     gateways: dict[str, BotGateway] = {}
     polling_tasks: list[asyncio.Task] = []
     cleanup = []

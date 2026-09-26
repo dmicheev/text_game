@@ -138,3 +138,19 @@ class GameEvent(Base):
     type: Mapped[str] = mapped_column(String(64))
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class FsmState(Base):
+    """Персистентные FSM-состояния диалогов: переживают рестарты."""
+
+    __tablename__ = "fsm_states"
+    __table_args__ = (UniqueConstraint("platform", "user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    platform: Mapped[str] = mapped_column(String(16))
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    state: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
