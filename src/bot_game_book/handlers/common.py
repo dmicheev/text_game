@@ -7,7 +7,7 @@ from bot_game_book.transport.router import Context, Router
 from bot_game_book.transport.types import PlatformUser
 
 HELP_TEXT = (
-    "📖 «Книга в стиле испорченный телефон»\n\n"
+    "📖 «Письмо из Простоквашино»\n\n"
     "Игроки по очереди пишут главы книги с помощью ИИ. Каждый следующий автор "
     "видит только короткое резюме предыдущей главы — сюжет дрейфует, в этом и соль.\n\n"
     "Команды:\n"
@@ -76,7 +76,41 @@ async def cmd_whoami(ctx: Context) -> None:
 
 async def cmd_cancel(ctx: Context) -> None:
     await ctx.fsm.clear()
-    await ctx.reply("Действие отменено.")
+    await ctx.reply(
+        "Действие отменено. Игры не тронуты — остановить игру можно только "
+        "через /admin → «❌ Отменить игру»."
+    )
+
+
+async def fallback_message(ctx: Context) -> None:
+    """Ответ на текст, не попавший ни в один хендлер: подсказываем, что делать."""
+    from sqlalchemy import select
+
+    from bot_game_book.models import Game, GameStatus
+
+    async with ctx.deps.session_maker() as session:
+        user = await get_user(session, ctx.user)
+        if user is None:
+            await ctx.reply("Нажми /start, чтобы зарегистрироваться в игре.")
+            return
+        result = await session.execute(
+            select(Game).where(
+                Game.current_player_id == user.id,
+                Game.status == GameStatus.running,
+            )
+        )
+        game = result.scalars().first()
+    if game is not None:
+        await ctx.reply(
+            f"Сейчас твой ход в игре «{game.topic}» (глава "
+            f"{game.current_chapter_idx} из {game.chapters_total}). "
+            "Нажми кнопку «✍️ Пишу главу» в сообщении, которое я присылал "
+            "при передаче хода."
+        )
+    else:
+        await ctx.reply(
+            "Не понял сообщение. " + HELP_TEXT
+        )
 
 
 def register(router: Router) -> None:
@@ -84,3 +118,4 @@ def register(router: Router) -> None:
     router.command("help", cmd_help)
     router.command("whoami", cmd_whoami)
     router.command("cancel", cmd_cancel)
+    router.message(fallback_message)

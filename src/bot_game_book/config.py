@@ -16,8 +16,13 @@ class Settings(BaseSettings):
     llm_api_base: str = "https://api.openai.com/v1"
     llm_api_key: str = "sk-test"
     llm_model: str = "gpt-4o-mini"
+    llm_model_fast: str = ""
     admin_usernames: str = ""
     seed_path: Path = SEED_PATH
+
+    @property
+    def fast_model(self) -> str:
+        return self.llm_model_fast or self.llm_model
 
     @property
     def messenger_list(self) -> list[str]:

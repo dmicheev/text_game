@@ -78,3 +78,16 @@ async def migrate(engine: AsyncEngine) -> None:
                     "WHERE dashboard_platform IS NULL"
                 )
             )
+
+        if await _column_exists(conn, "games", "dashboard_chat_id"):
+            await conn.execute(
+                text(
+                    "ALTER TABLE games ADD COLUMN IF NOT EXISTS style_temperature "
+                    "double precision"
+                )
+            )
+
+        if await _column_exists(conn, "chapters", "summary"):
+            await conn.execute(
+                text("ALTER TABLE chapters ADD COLUMN IF NOT EXISTS memory text")
+            )

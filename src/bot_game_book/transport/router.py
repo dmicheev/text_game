@@ -126,12 +126,13 @@ class Router:
                 if rule.kind == "command":
                     if parse_command(update.text) != rule.pattern:
                         continue
-                elif rule.state is not None and is_command:
-                    # команды проходят сквозь state-диалог (как /cancel)
-                    continue
-                elif rule.state is None and state is not None:
-                    # stateless message-хендлер не перехватывает FSM-диалог
-                    continue
+                else:
+                    # stateless текст (фолбэк) не ловит команды и FSM-диалог
+                    if rule.state is None and (is_command or state is not None):
+                        continue
+                    # state-диалог не ловит команды (их слушают command-правила)
+                    if rule.state is not None and is_command:
+                        continue
             return rule
         return None
 

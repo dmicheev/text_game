@@ -64,7 +64,7 @@ async def amain() -> None:
     provider = LLMProvider(
         settings.llm_api_base, settings.llm_api_key, settings.llm_model
     )
-    generator = ChapterGenerator(provider)
+    generator = ChapterGenerator(provider, fast_model=settings.fast_model)
     gateways: dict[str, BotGateway] = {}
     polling_tasks: list[asyncio.Task] = []
     cleanup = []

@@ -70,6 +70,7 @@ class Game(Base):
     style_card_id: Mapped[int | None] = mapped_column(ForeignKey("style_cards.id"), nullable=True)
     style_label: Mapped[str] = mapped_column(String(128))
     style_card_text: Mapped[str] = mapped_column(Text)
+    style_temperature: Mapped[float | None] = mapped_column(nullable=True)
     topic: Mapped[str] = mapped_column(Text)
     chapters_total: Mapped[int] = mapped_column(Integer)
     words_target: Mapped[int] = mapped_column(Integer)
@@ -122,6 +123,7 @@ class Chapter(Base):
     title: Mapped[str] = mapped_column(String(256))
     body: Mapped[str] = mapped_column(Text)
     summary: Mapped[str] = mapped_column(Text)
+    memory: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -150,6 +150,7 @@ class TurnOrchestrator:
                     title=draft.title,
                     body=draft.chapter,
                     summary=draft.summary,
+                    memory=draft.memory,
                 )
             )
             await self._log_event(

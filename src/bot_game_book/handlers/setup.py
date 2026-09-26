@@ -113,19 +113,40 @@ async def cb_catalog_page(ctx: Context) -> None:
 
 def card_text_of(card: StyleCard) -> str:
     if card.is_public_domain:
-        return f"Пиши в стиле {card.name_ru}. {card.description}"
-    return card.description
+        text = f"Пиши в стиле {card.name_ru}. {card.description}"
+    else:
+        text = card.description
+    if card.excerpt:
+        text += f"\n\nТВОЙ ГОЛОС — ОБРАЗЕЦ:\n{card.excerpt}"
+    return text
+
+
+async def _card_by_slug(session, slug: str) -> StyleCard | None:
+    result = await session.execute(select(StyleCard).where(StyleCard.slug == slug))
+    return result.scalar_one_or_none()
+
+
+def card_text_of(card: StyleCard) -> str:
+    if card.is_public_domain:
+        text = f"Пиши в стиле {card.name_ru}. {card.description}"
+    else:
+        text = card.description
+    if card.excerpt:
+        text += f"\n\nТВОЙ ГОЛОС — ОБРАЗЕЦ:\n{card.excerpt}"
+    return text
 
 
 async def cb_style_pick(ctx: Context) -> None:
     slug = ctx.update.data.split(":")[1]  # type: ignore[attr-defined]
     async with ctx.deps.session_maker() as session:
-        card = await session.get(StyleCard, slug)
+        card = await _card_by_slug(session, slug)
     if card is None:
         await ctx.answer("Карточка не найдена", alert=True)
         return
     await ctx.fsm.update_data(
-        style_label=card.name_ru, style_card_text=card_text_of(card)
+        style_label=card.name_ru,
+        style_card_text=card_text_of(card),
+        style_temperature=card.temperature,
     )
     await ctx.fsm.set_state(STATE_STYLE_GEN)
     await ctx.answer()
@@ -157,10 +178,12 @@ async def on_author_text(ctx: Context) -> None:
     if match is not None:
         _name, _score, slug = match
         async with ctx.deps.session_maker() as session:
-            card = await session.get(StyleCard, slug)
+            card = await _card_by_slug(session, slug)
         if card is not None:
             await ctx.fsm.update_data(
-                style_label=card.name_ru, style_card_text=card_text_of(card)
+                style_label=card.name_ru,
+                style_card_text=card_text_of(card),
+                style_temperature=card.temperature,
             )
             await ctx.fsm.set_state(STATE_STYLE_GEN)
             await ctx.reply(
@@ -329,6 +352,7 @@ async def cb_create_game(ctx: Context) -> None:
             host_user_id=host.id,
             style_label=data["style_label"],
             style_card_text=data["style_card_text"],
+            style_temperature=data.get("style_temperature"),
             topic=data["topic"],
             chapters_total=data["chapters_total"],
             words_target=data["words_target"],
@@ -344,6 +368,10 @@ async def cb_create_game(ctx: Context) -> None:
         for position, user_id in enumerate(order):
             session.add(GamePlayer(game_id=game.id, user_id=user_id, position=position))
         await session.commit()
+        game = await ctx.deps.orchestrator.get_game(session, game.id)
+        if game is None:
+            await ctx.answer("Не удалось создать игру", alert=True)
+            return
         queue = " → ".join(fmt_user(u) for u in await _users_by_ids(order))
         await ctx.deps.orchestrator.start_game(session, game)
     await ctx.fsm.clear()

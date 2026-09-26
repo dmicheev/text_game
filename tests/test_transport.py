@@ -154,6 +154,34 @@ class TestRouter:
         await router.dispatch(upd, gw, make_deps())
         assert calls == ["cancel"]
 
+    async def test_fallback_does_not_eat_commands_registered_later(self):
+        router = Router()
+        calls = []
+
+        async def fallback(ctx):
+            calls.append("fallback")
+
+        async def newgame(ctx):
+            calls.append("newgame")
+
+        router.message(fallback)  # фолбэк зарегистрирован раньше
+        router.command("newgame", newgame)  # команда позже
+        gw = FakeGateway()
+        await router.dispatch(make_message("/newgame"), gw, make_deps())
+        assert calls == ["newgame"]
+
+    async def test_fallback_catches_plain_text(self):
+        router = Router()
+        calls = []
+
+        async def fallback(ctx):
+            calls.append("fallback")
+
+        router.message(fallback)
+        gw = FakeGateway()
+        await router.dispatch(make_message("просто текст"), gw, make_deps())
+        assert calls == ["fallback"]
+
 
 class TestParseCommand:
     def test_simple(self):

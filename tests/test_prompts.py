@@ -1,4 +1,8 @@
-from bot_game_book.llm.prompts import build_chapter_messages, build_style_card_messages
+from bot_game_book.llm.prompts import (
+    build_chapter_messages,
+    build_style_card_messages,
+    build_summary_messages,
+)
 
 
 def make_messages(prev_summary, twist=None, rewrite_note=None, chapter_idx=2, total=6):
@@ -8,7 +12,6 @@ def make_messages(prev_summary, twist=None, rewrite_note=None, chapter_idx=2, to
         chapter_idx=chapter_idx,
         chapters_total=total,
         words_target=300,
-        summary_words=5,
         prev_summary=prev_summary,
         twist=twist,
         rewrite_note=rewrite_note,
@@ -45,9 +48,23 @@ def test_twist_included():
     assert "пусть будет дракон" in messages[1]["content"]
 
 
-def test_summary_words_in_rules():
+def test_chapter_prompt_is_prose_not_json():
     messages = make_messages(prev_summary="резюме")
-    assert "ровно 5 слов" in messages[0]["content"]
+    system = messages[0]["content"]
+    assert "JSON" not in system.replace("без JSON", "")
+    assert "## " in system
+    assert "художественная проза" in system
+    assert "ТВОЙ ПОЧЕРК" in system
+
+
+def test_summary_prompt_words_and_json():
+    messages = build_summary_messages(
+        chapter_text="Текст главы", topic="тема", summary_words=5
+    )
+    system = messages[1 - 1]["content"]
+    assert "РОВНО 5 слов" in system
+    assert "summary" in system
+    assert "Текст главы" in messages[1]["content"]
 
 
 def test_style_card_messages_shape():

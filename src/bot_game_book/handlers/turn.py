@@ -17,24 +17,23 @@ MAX_REGENS = 2
 
 
 async def _load_game(ctx: Context, game_id: int):
-    from bot_game_book.models import Game
-
     async with ctx.deps.session_maker() as session:
-        result = await session.execute(select(Game).where(Game.id == game_id))
-        game = result.scalar_one_or_none()
-        if game is not None:
-            _ = game.players  # preload через selectin
+        game = await ctx.deps.orchestrator.get_game(session, game_id)
         return game
 
 
-async def _last_summary(ctx: Context, game_id: int, chapter_idx: int) -> str | None:
+async def _last_summary(
+    ctx: Context, game_id: int, chapter_idx: int
+) -> tuple[str | None, str | None]:
+    """(короткое резюме, развёрнутая память) предыдущей главы."""
     async with ctx.deps.session_maker() as session:
         result = await session.execute(
-            select(Chapter.summary).where(
+            select(Chapter.summary, Chapter.memory).where(
                 Chapter.game_id == game_id, Chapter.idx == chapter_idx - 1
             )
         )
-        return result.scalar_one_or_none()
+        row = result.first()
+        return (row[0], row[1]) if row else (None, None)
 
 
 def _is_current_player(game, ctx: Context) -> bool:
@@ -99,7 +98,7 @@ async def cb_generate(ctx: Context) -> None:
     await ctx.answer()
     await ctx.fsm.set_state(STATE_BUSY)
     status_id = await ctx.reply("🌀 Пишу главу... это займёт до минуты.")
-    prev_summary = await _last_summary(ctx, game_id, game.current_chapter_idx)
+    prev_summary, prev_memory = await _last_summary(ctx, game_id, game.current_chapter_idx)
     try:
         draft = await ctx.deps.generator.generate_chapter(
             style_card_text=game.style_card_text,
@@ -109,7 +108,9 @@ async def cb_generate(ctx: Context) -> None:
             words_target=game.words_target,
             summary_words=game.summary_words,
             prev_summary=prev_summary,
+            prev_memory=prev_memory,
             twist=data.get("twist"),
+            temperature=game.style_temperature,
         )
     except LLMError:
         await ctx.fsm.set_state(STATE_TWIST)
@@ -175,7 +176,7 @@ async def cb_rewrite(ctx: Context) -> None:
     await ctx.answer()
     await ctx.fsm.update_data(regens=regens + 1)
     status_id = await ctx.reply("🌀 Пишу заново...")
-    prev_summary = await _last_summary(ctx, game_id, game.current_chapter_idx)
+    prev_summary, prev_memory = await _last_summary(ctx, game_id, game.current_chapter_idx)
     try:
         draft = await ctx.deps.generator.generate_chapter(
             style_card_text=game.style_card_text,
@@ -185,11 +186,13 @@ async def cb_rewrite(ctx: Context) -> None:
             words_target=game.words_target,
             summary_words=game.summary_words,
             prev_summary=prev_summary,
+            prev_memory=prev_memory,
             twist=data.get("twist"),
             rewrite_note=(
                 "автор просит написать эту главу полностью иначе, "
                 "сохранив стиль и преемственность сюжета"
             ),
+            temperature=game.style_temperature,
         )
     except LLMError:
         await ctx.gateway.edit_message(ctx.chat_id, status_id or "", "😔 ИИ недоступен, попробуй ещё раз.")
