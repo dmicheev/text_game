@@ -96,10 +96,16 @@ async def ask_style(ctx: Context) -> None:
 
 
 async def cmd_newgame(ctx: Context) -> None:
-    from bot_game_book.handlers.common import upsert_user
+    from bot_game_book.handlers.common import get_user, upsert_user
 
     async with ctx.deps.session_maker() as session:
-        await upsert_user(session, ctx.user)
+        user = await upsert_user(session, ctx.user)
+        if not user.is_admin:
+            await ctx.reply(
+                "Создавать игры может только ведущий. Попроси ведущего "
+                "набрать тебя в игру через /newgame."
+            )
+            return
     await ask_style(ctx)
 
 
