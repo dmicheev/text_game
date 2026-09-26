@@ -32,6 +32,12 @@ class BotGateway(Protocol):
         """Удалить своё сообщение; ошибки молча игнорируются."""
         ...
 
+    async def send_photo(
+        self, chat_id: int, image: bytes, caption: str | None = None
+    ) -> str | None:
+        """Отправить изображение (jpeg-байты) с подписью."""
+        ...
+
     async def answer_callback(
         self, callback_id: str | None, text: str | None = None, alert: bool = False
     ) -> None:

@@ -77,6 +77,28 @@ class MaxClient:
         message_id = message.get("message_id")
         return str(message_id) if message_id is not None else None
 
+    async def send_photo(
+        self, user_id: int, image: bytes, caption: str | None = None
+    ) -> str | None:
+        token = await self.upload_image(image)
+        body: dict = {"user_id": user_id, "text": caption or ""}
+        body["attachments"] = [{"type": "image", "payload": {"token": token}}]
+        result = await self._request("POST", "/messages", json=body)
+        message = result.get("message") or {}
+        message_id = message.get("message_id")
+        return str(message_id) if message_id is not None else None
+
+    async def upload_image(self, image: bytes) -> str:
+        files = {"data": ("illustration.jpg", image, "image/jpeg")}
+        data = {"type": "image"}
+        result = await self._request(
+            "POST", "/upload", files=files, data=data
+        )
+        token = result.get("token")
+        if not token:
+            raise MaxAPIError("upload did not return a token")
+        return str(token)
+
     async def edit_message(
         self, chat_id: int, message_id: str, text: str, keyboard: Keyboard | None
     ) -> dict:
@@ -137,6 +159,15 @@ class MaxGateway:
             await self._client.delete_message(chat_id, message_id)
         except httpx.HTTPError as e:
             logger.warning("max delete %s failed: %s", message_id, e)
+
+    async def send_photo(
+        self, chat_id: int, image: bytes, caption: str | None = None
+    ) -> str | None:
+        try:
+            return await self._client.send_photo(chat_id, image, caption)
+        except (httpx.HTTPError, MaxAPIError) as e:
+            logger.warning("max photo to %s failed: %s", chat_id, e)
+            return None
 
     async def answer_callback(
         self, callback_id: str | None, text: str | None = None, alert: bool = False

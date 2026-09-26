@@ -9,6 +9,7 @@ from sqlalchemy import (
     Enum as SAEnum,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -124,6 +125,8 @@ class Chapter(Base):
     body: Mapped[str] = mapped_column(Text)
     summary: Mapped[str] = mapped_column(Text)
     memory: Mapped[str | None] = mapped_column(Text, nullable=True)
+    illustration: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    illustration_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

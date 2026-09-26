@@ -15,6 +15,7 @@ from bot_game_book.config import get_settings
 from bot_game_book.db import get_session_maker, init_db
 from bot_game_book.engine.orchestrator import TurnOrchestrator
 from bot_game_book.handlers.registry import register_all
+from bot_game_book.images import Illustrator, NoImages, create_images_provider
 from bot_game_book.llm.generation import ChapterGenerator
 from bot_game_book.llm.provider import LLMProvider
 from bot_game_book.models import User
@@ -95,7 +96,13 @@ async def amain() -> None:
         raise SystemExit("no messenger transport configured (check MESSENGERS/tokens)")
 
     notifier = Notifier(gateways)
-    orchestrator = TurnOrchestrator(notifier)
+    images = create_images_provider(settings)
+    illustrator = (
+        Illustrator(images, provider, fast_model=settings.fast_model)
+        if not isinstance(images, NoImages)
+        else None
+    )
+    orchestrator = TurnOrchestrator(notifier, illustrator=illustrator)
     router = build_router(session_maker, generator, orchestrator, notifier, settings)
     deps: Deps = router._deps  # noqa: SLF001
 
@@ -130,6 +137,8 @@ async def amain() -> None:
         for task in polling_tasks:
             task.cancel()
         await provider.aclose()
+        if not isinstance(images, NoImages):
+            await images.aclose()
         for close in cleanup:
             try:
                 await close()

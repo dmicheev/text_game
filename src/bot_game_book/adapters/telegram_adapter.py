@@ -4,7 +4,13 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramAPIError
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from bot_game_book.transport.gateway import BotGateway
 from bot_game_book.transport.router import Deps, Router
@@ -68,6 +74,22 @@ class TelegramGateway:
         except TelegramBadRequest as e:
             logger.warning("edit %s failed: %s", message_id, e)
             return False
+
+    async def send_photo(
+        self, chat_id: int, image: bytes, caption: str | None = None
+    ) -> str | None:
+        try:
+            msg = await self._bot.send_photo(
+                chat_id,
+                photo=BufferedInputFile(image, filename="illustration.jpg"),
+                caption=caption,
+            )
+            return str(msg.message_id)
+        except TelegramForbiddenError:
+            logger.warning("user %s blocked the bot", chat_id)
+        except TelegramBadRequest as e:
+            logger.warning("photo to %s failed: %s", chat_id, e)
+        return None
 
     async def delete_message(self, chat_id: int, message_id: str) -> None:
         try:

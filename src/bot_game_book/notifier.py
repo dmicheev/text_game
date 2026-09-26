@@ -45,6 +45,17 @@ class Notifier:
     ) -> None:
         await self.send(user.platform, user.platform_user_id, text, keyboard)
 
+    async def send_photo_user(
+        self, user: User, image: bytes, caption: str | None = None
+    ) -> None:
+        gateway = self._gateway(user.platform)
+        if gateway is None:
+            return
+        try:
+            await gateway.send_photo(user.platform_user_id, image, caption)
+        except Exception as e:
+            logger.warning("photo to %s/%s failed: %s", user.platform, user.id, e)
+
     async def send(
         self, platform: str, chat_id: int, text: str, keyboard: Keyboard | None = None
     ) -> None:

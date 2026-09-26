@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from bot_game_book.db import get_session_maker
-from bot_game_book.engine.compiler import compile_book
+from bot_game_book.engine.compiler import book_header, chapter_block
 from bot_game_book.engine.queue import next_position
 from bot_game_book.engine.views import (
     dashboard_text,
@@ -33,8 +33,9 @@ logger = logging.getLogger(__name__)
 
 
 class TurnOrchestrator:
-    def __init__(self, notifier: Notifier) -> None:
+    def __init__(self, notifier: Notifier, illustrator=None) -> None:
         self._notifier = notifier
+        self._illustrator = illustrator
         self._locks: dict[int, asyncio.Lock] = {}
 
     def _lock_for(self, game_id: int) -> asyncio.Lock:
@@ -159,6 +160,17 @@ class TurnOrchestrator:
                 "chapter_confirmed",
                 {"idx": game.current_chapter_idx, "author": author_user_id},
             )
+            if self._illustrator is not None:
+                asyncio.create_task(
+                    self._illustrate_chapter(
+                        game.id,
+                        game.current_chapter_idx,
+                        draft.title,
+                        draft.chapter,
+                        game.style_label,
+                        author_user_id,
+                    )
+                )
             if game.current_chapter_idx >= game.chapters_total:
                 await self._finish_game(session, game)
                 outcome = "finished"
@@ -169,6 +181,41 @@ class TurnOrchestrator:
                 outcome = "ok"
             await session.commit()
             return outcome
+
+    async def _illustrate_chapter(
+        self,
+        game_id: int,
+        chapter_idx: int,
+        title: str,
+        body: str,
+        style_label: str,
+        author_user_id: int,
+    ) -> None:
+        """Фоновая иллюстрация: генерация, сохранение, отправка автору."""
+        maker = get_session_maker()
+        try:
+            image, prompt = await self._illustrator.illustrate(style_label, body)
+        except Exception as e:
+            logger.warning("illustration for game %s ch %s failed: %s", game_id, chapter_idx, e)
+            return
+        async with maker() as session:
+            result = await session.execute(
+                select(Chapter).where(
+                    Chapter.game_id == game_id, Chapter.idx == chapter_idx
+                )
+            )
+            chapter = result.scalar_one_or_none()
+            if chapter is None:
+                return
+            chapter.illustration = image
+            chapter.illustration_prompt = prompt
+            user = await session.get(User, author_user_id)
+            await session.commit()
+        if user is not None:
+            await self._notifier.send_photo_user(
+                user, image, f"🎨 Иллюстрация к главе {chapter_idx}: «{title}»"
+            )
+        logger.info("illustrated game %s chapter %s", game_id, chapter_idx)
 
     async def skip_turn_by_id(self, game_id: int, reason: str) -> str:
         maker = get_session_maker()
@@ -261,6 +308,21 @@ class TurnOrchestrator:
         await self.refresh_dashboard(session, game)
         self._locks.pop(game.id, None)
 
+    async def _send_book_to(self, user, game, chapters, labels, chain) -> None:
+        header = book_header(game, len(chapters))
+        await self._notifier.send_user(user, header)
+        for ch in chapters:
+            if ch.illustration:
+                await self._notifier.send_photo_user(
+                    user,
+                    ch.illustration,
+                    f"🎨 Иллюстрация к главе {ch.idx}: «{ch.title}»",
+                )
+            await self._notifier.send_user(
+                user, chapter_block(ch, labels.get(ch.author_user_id, "?"))
+            )
+        await self._notifier.send_user(user, chain)
+
     async def _finish_game(self, session, game: Game) -> None:
         result = await session.execute(
             select(Chapter)
@@ -272,20 +334,15 @@ class TurnOrchestrator:
         game.status = GameStatus.finished
         game.finished_at = utcnow()
         await self._log_event(session, game.id, "game_finished", {"chapters": len(chapters)})
-        parts = compile_book(game, chapters, labels)
         chain = summaries_chain(chapters, labels)
         for player in game.players:
-            for part in parts:
-                await self._notifier.send_user(player.user, part)
-            await self._notifier.send_user(player.user, chain)
+            await self._send_book_to(player.user, game, chapters, labels, chain)
         host = await session.get(User, game.host_user_id)
         host_ids = {
             (p.user.platform, p.user.platform_user_id) for p in game.players
         }
         if host is not None and (host.platform, host.platform_user_id) not in host_ids:
-            for part in parts:
-                await self._notifier.send_user(host, part)
-            await self._notifier.send_user(host, chain)
+            await self._send_book_to(host, game, chapters, labels, chain)
         await self.refresh_dashboard(session, game)
         self._locks.pop(game.id, None)
 

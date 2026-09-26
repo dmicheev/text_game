@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     llm_api_key: str = "sk-test"
     llm_model: str = "gpt-4o-mini"
     llm_model_fast: str = ""
+    images_provider: str = "pollinations"
+    image_api_base: str = "https://image.pollinations.ai"
     admin_usernames: str = ""
     seed_path: Path = SEED_PATH
 

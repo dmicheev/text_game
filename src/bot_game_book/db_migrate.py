@@ -91,3 +91,12 @@ async def migrate(engine: AsyncEngine) -> None:
             await conn.execute(
                 text("ALTER TABLE chapters ADD COLUMN IF NOT EXISTS memory text")
             )
+            await conn.execute(
+                text("ALTER TABLE chapters ADD COLUMN IF NOT EXISTS illustration bytea")
+            )
+            await conn.execute(
+                text(
+                    "ALTER TABLE chapters ADD COLUMN IF NOT EXISTS "
+                    "illustration_prompt text"
+                )
+            )
